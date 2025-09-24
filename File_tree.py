@@ -1,76 +1,60 @@
+import sys
 import os
-import time
+from PyQt5.QtWidgets import QApplication, QMainWindow, QTreeView, QFileSystemModel, QMenu, QFileDialog
+from PyQt5.QtCore import QDir
+from PyQt5.QtGui import QCursor, QClipboard
 
-class LazyTree:
+
+class FileTree(QMainWindow):
     def __init__(self, root_path):
-        if not os.path.isdir(root_path):
-            raise ValueError(f"{root_path} is not a valid directory")
-        self.root_path = os.path.abspath(root_path)
+        super().__init__()
+        self.setWindowTitle("Lazy Loading Directory Tree")
+        self.setGeometry(100, 100, 800, 600)
 
-    def list_dir(self, path):
-        try:
-            items = os.listdir(path)
-            items.sort()
-            return items
-        except PermissionError:
-            return ["<Permission Denied>"]
-        except FileNotFoundError:
-            return ["<Not Found>"]
+        # Set up model
+        self.model = QFileSystemModel()
+        self.model.setRootPath(root_path)
+        self.model.setFilter(QDir.AllDirs | QDir.NoDotAndDotDot)
 
-    def display_level(self, path, prefix=""):
-        items = self.list_dir(path)
-        for idx, item in enumerate(items):
-            full_path = os.path.join(path, item)
-            print(f"{prefix}[{idx}] {item}{'/' if os.path.isdir(full_path) else ''}")
+        # Set up tree view
+        self.tree = QTreeView(self)
+        self.tree.setModel(self.model)
+        self.tree.setRootIndex(self.model.index(root_path))
+        self.tree.setColumnHidden(1, True)  # Hide Size column
+        self.tree.setColumnHidden(2, True)  # Hide Type column
+        self.tree.setColumnHidden(3, True)  # Hide Date Modified column
+        self.tree.setContextMenuPolicy(3)   # Enable custom context menu
 
-    def run(self):
-        current_path = self.root_path
-        history = []
+        self.setCentralWidget(self.tree)
 
-        while True:
-            print("\nCurrent path:", current_path)
-            self.display_level(current_path)
-            print("\nOptions: [index] to open folder, 'c [index]' to copy path, '..' to go up, 'q' to quit")
+        # Connect context menu
+        self.tree.customContextMenuRequested.connect(self.open_menu)
 
-            command = input("> ").strip()
+    def open_menu(self, position):
+        index = self.tree.indexAt(position)
+        if not index.isValid():
+            return
 
-            if command == "q":
-                break
-            elif command == "..":
-                if history:
-                    current_path = history.pop()
-                else:
-                    print("Already at root.")
-            elif command.startswith("c "):
-                try:
-                    idx = int(command.split()[1])
-                    items = self.list_dir(current_path)
-                    if 0 <= idx < len(items):
-                        full_path = os.path.join(current_path, items[idx])
-                        print("Copied path:", full_path)
-                    else:
-                        print("Invalid index.")
-                except ValueError:
-                    print("Invalid command.")
-            else:
-                try:
-                    idx = int(command)
-                    items = self.list_dir(current_path)
-                    if 0 <= idx < len(items):
-                        selected = os.path.join(current_path, items[idx])
-                        if os.path.isdir(selected):
-                            history.append(current_path)
-                            current_path = selected
-                        else:
-                            print(f"{selected} is not a folder.")
-                    else:
-                        print("Invalid index.")
-                except ValueError:
-                    print("Invalid command.")
+        menu = QMenu()
+        copy_action = menu.addAction("Copy Path")
+        action = menu.exec_(QCursor.pos())
+
+        if action == copy_action:
+            path = self.model.filePath(index)
+            clipboard = QApplication.clipboard()
+            clipboard.setText(path)
+            print("Copied path:", path)
 
 
 if __name__ == "__main__":
-    root = input("Enter root path: ").strip()
-    time.sleep(1)
-    tree = LazyTree(root)
-    tree.run()
+    app = QApplication(sys.argv)
+
+    # Open folder selection dialog instead of asking for input
+    folder = QFileDialog.getExistingDirectory(None, "Select Root Folder", os.path.expanduser("~"))
+    if not folder:
+        print("No folder selected.")
+        sys.exit(0)
+
+    window = FileTree(folder)
+    window.show()
+    sys.exit(app.exec_())
